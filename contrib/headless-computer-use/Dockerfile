@@ -1,14 +1,28 @@
 FROM ubuntu:24.04 AS builder
 
+COPY --from=node:22-bookworm /usr/local/ /usr/local/
+COPY --from=rust:1-bookworm /usr/local/cargo/ /usr/local/cargo/
+COPY --from=rust:1-bookworm /usr/local/rustup/ /usr/local/rustup/
+
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH=/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1
 ENV PACKAGE_WITH_UPDATER=0
 
 WORKDIR /src
 COPY . /src
 
-RUN ./scripts/install-deps.sh
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    ca-certificates \
+    curl \
+    p7zip-full \
+    pkg-config \
+    python3 \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
 RUN make build-app
 RUN /src/codex-app/resources/node-runtime/bin/npm install -g --prefix /opt/codex-cli @openai/codex
 
