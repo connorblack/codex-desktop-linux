@@ -85,6 +85,8 @@ pub struct WindowingReport {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct InputReport {
+    pub xdotool: Check,
+    pub x11_display: Check,
     pub ydotool: Check,
     pub ydotoold: Check,
     pub ydotool_socket: Check,
@@ -474,6 +476,8 @@ fn check_from_backend_probe(probe: &registry::BackendProbe) -> Check {
 
 fn input_report() -> InputReport {
     InputReport {
+        xdotool: command_path_check("xdotool"),
+        x11_display: display_env_check(),
         ydotool: command_path_check("ydotool"),
         ydotoold: process_check("ydotoold"),
         ydotool_socket: ydotool_socket_check(),
@@ -492,8 +496,9 @@ fn readiness_report(
     let can_query_windows = windowing.can_list_windows;
     let can_focus_apps = windowing.can_focus_apps;
     let can_focus_windows = windowing.can_focus_windows;
-    let can_send_development_input =
-        input.ydotool.ok && input.ydotoold.ok && input.ydotool_socket.ok;
+    let can_send_ydotool_input = input.ydotool.ok && input.ydotoold.ok && input.ydotool_socket.ok;
+    let can_send_x11_input = input.xdotool.ok && input.x11_display.ok;
+    let can_send_development_input = can_send_ydotool_input || can_send_x11_input;
 
     if !can_build_accessibility_tree {
         blockers.push(
@@ -520,7 +525,7 @@ fn readiness_report(
 
     if !can_send_development_input {
         blockers.push(
-            "Development input fallback is unavailable; ydotool needs a running ydotoold daemon with a connectable ydotoold socket."
+            "Development input fallback is unavailable; either provide xdotool on a live X11 DISPLAY or start ydotoold with a connectable ydotool socket."
                 .to_string(),
         );
     }
@@ -540,10 +545,10 @@ fn readiness_report(
     } else if !can_focus_windows {
         "Enable an exact-focus window backend before using window_id, title, or terminal-targeted input.".to_string()
     } else if !can_send_development_input {
-        "Fix ydotool input access: start ydotoold with a socket accessible to this desktop user."
+        "Fix input fallback access: provide xdotool on a live X11 DISPLAY or start ydotoold with a socket accessible to this desktop user."
             .to_string()
     } else {
-        "Computer Use is ready: AT-SPI tree support, window targeting, and ydotool input fallback are available."
+        "Computer Use is ready: AT-SPI tree support, window targeting, and an input fallback (xdotool on X11 or ydotool) are available."
             .to_string()
     };
 
@@ -579,6 +584,13 @@ fn check_detail_contains_true(check: &Check) -> bool {
 
 fn env_var(key: &str) -> Option<String> {
     env::var(key).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn display_env_check() -> Check {
+    match env_var("DISPLAY") {
+        Some(value) => Check::ok(value),
+        None => Check::fail("DISPLAY is unset".to_string()),
+    }
 }
 
 fn xdg_runtime_dir() -> Option<PathBuf> {
@@ -880,6 +892,8 @@ mod tests {
         uinput: Check,
     ) -> InputReport {
         InputReport {
+            xdotool: Check::fail("missing"),
+            x11_display: Check::fail("DISPLAY is unset"),
             ydotool,
             ydotoold,
             ydotool_socket,
@@ -1040,7 +1054,7 @@ mod tests {
         assert!(readiness
             .blockers
             .iter()
-            .any(|blocker| blocker.contains("connectable ydotoold socket")));
+            .any(|blocker| blocker.contains("provide xdotool on a live X11 DISPLAY")));
     }
 
     #[test]
@@ -1060,11 +1074,11 @@ mod tests {
         assert!(!readiness.can_send_development_input);
         assert!(readiness
             .recommended_next_step
-            .contains("Fix ydotool input access"));
+            .contains("Fix input fallback access"));
         assert!(readiness
             .blockers
             .iter()
-            .any(|blocker| blocker.contains("connectable ydotoold socket")));
+            .any(|blocker| blocker.contains("provide xdotool on a live X11 DISPLAY")));
     }
 
     #[test]
@@ -1088,10 +1102,7 @@ mod tests {
 
     #[test]
     fn ydotool_socket_check_accepts_datagram_socket() {
-        let dir = std::env::temp_dir().join(format!(
-            "codex-computer-use-diagnostics-dgram-{}",
-            std::process::id()
-        ));
+        let dir = PathBuf::from(format!("/tmp/cu-dgram-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create temp diagnostics dir");
         let socket = dir.join("ydotool.sock");

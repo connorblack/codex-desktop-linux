@@ -369,15 +369,27 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        let result = run_ydotool_sequence(&[
-            absolute_mousemove_args(x, y),
-            vec![
-                "click".to_string(),
-                "--repeat".to_string(),
-                click_count,
-                button,
-            ],
-        ]);
+        let result = if self.should_prefer_x11_pointer_backend() {
+            run_xdotool_sequence(&[
+                xdotool_mousemove_args(x, y),
+                vec![
+                    "click".to_string(),
+                    "--repeat".to_string(),
+                    params.click_count.unwrap_or(1).clamp(1, 10).to_string(),
+                    xdotool_mouse_button(button.as_str()).to_string(),
+                ],
+            ])
+        } else {
+            run_ydotool_sequence(&[
+                absolute_mousemove_args(x, y),
+                vec![
+                    "click".to_string(),
+                    "--repeat".to_string(),
+                    click_count,
+                    button,
+                ],
+            ])
+        };
         Json(action_result("click", result, received))
     }
 
@@ -531,12 +543,21 @@ impl ComputerUseLinux {
                 });
             }
         };
-        let mut sequence = Vec::new();
-        if let Some((x, y)) = target_point {
-            sequence.push(absolute_mousemove_args(x, y));
-        }
-        sequence.push(wheel_mousemove_args(dx, dy));
-        let result = run_ydotool_sequence(&sequence);
+        let result = if self.should_prefer_x11_pointer_backend() {
+            let mut sequence = Vec::new();
+            if let Some((x, y)) = target_point {
+                sequence.push(xdotool_mousemove_args(x, y));
+            }
+            sequence.push(xdotool_scroll_args(direction, units));
+            run_xdotool_sequence(&sequence)
+        } else {
+            let mut sequence = Vec::new();
+            if let Some((x, y)) = target_point {
+                sequence.push(absolute_mousemove_args(x, y));
+            }
+            sequence.push(wheel_mousemove_args(dx, dy));
+            run_ydotool_sequence(&sequence)
+        };
         Json(action_result("scroll", result, received))
     }
 
@@ -593,12 +614,27 @@ impl ComputerUseLinux {
                 Err(_) => {}
             }
         }
-        let result = run_ydotool_sequence(&[
-            absolute_mousemove_args(params.start_x, params.start_y),
-            vec!["click".to_string(), "0x40".to_string()],
-            absolute_mousemove_args(params.end_x, params.end_y),
-            vec!["click".to_string(), "0x80".to_string()],
-        ]);
+        let result = if self.should_prefer_x11_pointer_backend() {
+            run_xdotool_sequence(&[
+                xdotool_mousemove_args(params.start_x, params.start_y),
+                vec![
+                    "mousedown".to_string(),
+                    xdotool_mouse_button("left").to_string(),
+                ],
+                xdotool_mousemove_args(params.end_x, params.end_y),
+                vec![
+                    "mouseup".to_string(),
+                    xdotool_mouse_button("left").to_string(),
+                ],
+            ])
+        } else {
+            run_ydotool_sequence(&[
+                absolute_mousemove_args(params.start_x, params.start_y),
+                vec!["click".to_string(), "0x40".to_string()],
+                absolute_mousemove_args(params.end_x, params.end_y),
+                vec!["click".to_string(), "0x80".to_string()],
+            ])
+        };
         Json(action_result("drag", result, received))
     }
 
@@ -632,9 +668,21 @@ impl ComputerUseLinux {
                 received,
             });
         };
-        let mut args = vec!["key".to_string()];
-        args.extend(key_events);
-        let result = run_ydotool(&args).map(|output| vec![output]);
+        let result = if self.should_prefer_x11_keyboard_backend() {
+            match xdotool_key_chord(&params.key) {
+                Some(chord) => run_xdotool(&[
+                    "key".to_string(),
+                    "--clearmodifiers".to_string(),
+                    chord,
+                ])
+                .map(|output| vec![output]),
+                None => Err("Unsupported key for xdotool. Use names like Enter, Escape, Tab, ArrowLeft, Super, Ctrl+L, or a single US keyboard letter/digit.".to_string()),
+            }
+        } else {
+            let mut args = vec!["key".to_string()];
+            args.extend(key_events);
+            run_ydotool(&args).map(|output| vec![output])
+        };
         Json(action_result_with_focus(
             "press_key",
             result,
@@ -722,7 +770,11 @@ impl ComputerUseLinux {
                 }
             }
         }
-        let result = run_ydotool_type_text(&params.text).map(|output| vec![output]);
+        let result = if self.should_prefer_x11_keyboard_backend() {
+            run_xdotool_type_text(&params.text)
+        } else {
+            run_ydotool_type_text(&params.text).map(|output| vec![output])
+        };
         Json(action_result_with_focus(
             "type_text",
             result,
@@ -1098,12 +1150,29 @@ impl ComputerUseLinux {
             .is_some_and(|value| value.eq_ignore_ascii_case("wayland"))
     }
 
+    fn has_x11_display(&self) -> bool {
+        crate::diagnostics::hydrate_session_bus_env();
+        env::var("DISPLAY")
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty())
+    }
+
     fn should_prefer_portal_pointer_backend(&self) -> bool {
         env::var("CODEX_COMPUTER_USE_FORCE_YDOTOOL_POINTER")
             .ok()
             .as_deref()
             != Some("1")
             && self.is_wayland_session()
+    }
+
+    fn should_prefer_x11_pointer_backend(&self) -> bool {
+        env::var("CODEX_COMPUTER_USE_FORCE_YDOTOOL_POINTER")
+            .ok()
+            .as_deref()
+            != Some("1")
+            && !self.is_wayland_session()
+            && self.has_x11_display()
+            && xdotool_available()
     }
 
     fn should_prefer_portal_keyboard_backend(&self) -> bool {
@@ -1121,6 +1190,16 @@ impl ComputerUseLinux {
             .as_deref()
             != Some("1")
             && self.is_kde_wayland_session()
+    }
+
+    fn should_prefer_x11_keyboard_backend(&self) -> bool {
+        env::var("CODEX_COMPUTER_USE_FORCE_YDOTOOL_KEYBOARD")
+            .ok()
+            .as_deref()
+            != Some("1")
+            && !self.is_wayland_session()
+            && self.has_x11_display()
+            && xdotool_available()
     }
 
     fn is_kde_wayland_session(&self) -> bool {
@@ -1983,10 +2062,45 @@ fn wheel_mousemove_args(dx: i32, dy: i32) -> Vec<String> {
     ]
 }
 
+fn xdotool_mousemove_args(x: i32, y: i32) -> Vec<String> {
+    vec![
+        "mousemove".to_string(),
+        "--sync".to_string(),
+        x.to_string(),
+        y.to_string(),
+    ]
+}
+
+fn xdotool_scroll_args(direction: ScrollDirection, units: i32) -> Vec<String> {
+    let button = match direction {
+        ScrollDirection::Up => "4",
+        ScrollDirection::Down => "5",
+        ScrollDirection::Left => "6",
+        ScrollDirection::Right => "7",
+    };
+    vec![
+        "click".to_string(),
+        "--repeat".to_string(),
+        units.to_string(),
+        button.to_string(),
+    ]
+}
+
 fn run_ydotool_sequence(commands: &[Vec<String>]) -> std::result::Result<Vec<Output>, String> {
     let mut outputs = Vec::new();
     for (index, args) in commands.iter().enumerate() {
         outputs.push(run_ydotool(args)?);
+        if index + 1 < commands.len() {
+            thread::sleep(Duration::from_millis(35));
+        }
+    }
+    Ok(outputs)
+}
+
+fn run_xdotool_sequence(commands: &[Vec<String>]) -> std::result::Result<Vec<Output>, String> {
+    let mut outputs = Vec::new();
+    for (index, args) in commands.iter().enumerate() {
+        outputs.push(run_xdotool(args)?);
         if index + 1 < commands.len() {
             thread::sleep(Duration::from_millis(35));
         }
@@ -2005,6 +2119,17 @@ fn run_ydotool(args: &[String]) -> std::result::Result<Output, String> {
         Ok(output) if output.status.success() => Ok(output),
         Ok(output) => Err(ydotool_output_error(output)),
         Err(error) => Err(format!("failed to run ydotool: {error}")),
+    }
+}
+
+fn run_xdotool(args: &[String]) -> std::result::Result<Output, String> {
+    let mut command = Command::new("xdotool");
+    command.args(args);
+
+    match command.output() {
+        Ok(output) if output.status.success() => Ok(output),
+        Ok(output) => Err(command_output_error("xdotool", output)),
+        Err(error) => Err(format!("failed to run xdotool: {error}")),
     }
 }
 
@@ -2034,6 +2159,11 @@ fn run_ydotool_type_text(text: &str) -> std::result::Result<Output, String> {
         }
         Err(error) => Err(format!("failed to run ydotool: {error}")),
     }
+}
+
+fn run_xdotool_type_text(text: &str) -> std::result::Result<Vec<Output>, String> {
+    let commands = xdotool_type_commands(text)?;
+    run_xdotool_sequence(&commands)
 }
 
 const EVDEV_KEY_LEFTCTRL: i32 = 29;
@@ -2178,6 +2308,16 @@ fn mouse_button_code(button: Option<&str>) -> String {
     .to_string()
 }
 
+fn xdotool_mouse_button(button: &str) -> &'static str {
+    match button.to_ascii_lowercase().as_str() {
+        "0xc1" | "right" => "3",
+        "0xc2" | "middle" => "2",
+        "0xc3" | "side" | "back" => "8",
+        "0xc4" | "extra" | "forward" => "9",
+        _ => "1",
+    }
+}
+
 fn key_sequence(key: &str) -> Option<Vec<String>> {
     let parts = key
         .split('+')
@@ -2206,6 +2346,70 @@ fn key_sequence(key: &str) -> Option<Vec<String>> {
         events.push(format!("{modifier}:0"));
     }
     Some(events)
+}
+
+fn xdotool_key_chord(key: &str) -> Option<String> {
+    let parts = key
+        .split('+')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let (key_part, modifier_parts) = parts.split_last()?;
+    if modifier_parts.is_empty() {
+        if let Some(modifier) = xdotool_modifier_name(key_part) {
+            return Some(modifier.to_string());
+        }
+    }
+
+    let mut chord = Vec::new();
+    for part in modifier_parts {
+        chord.push(xdotool_modifier_name(part)?.to_string());
+    }
+    chord.push(xdotool_key_name(key_part)?);
+    Some(chord.join("+"))
+}
+
+fn xdotool_modifier_name(key: &str) -> Option<&'static str> {
+    match normalize_key(key).as_str() {
+        "ctrl" | "control" => Some("ctrl"),
+        "alt" | "option" => Some("alt"),
+        "shift" => Some("shift"),
+        "meta" | "super" | "cmd" | "command" => Some("super"),
+        _ => None,
+    }
+}
+
+fn xdotool_key_name(key: &str) -> Option<String> {
+    Some(match normalize_key(key).as_str() {
+        "enter" | "return" => "Return".to_string(),
+        "escape" | "esc" => "Escape".to_string(),
+        "tab" => "Tab".to_string(),
+        "backspace" => "BackSpace".to_string(),
+        "delete" | "del" => "Delete".to_string(),
+        "space" => "space".to_string(),
+        "home" => "Home".to_string(),
+        "end" => "End".to_string(),
+        "pageup" | "page_up" => "Prior".to_string(),
+        "pagedown" | "page_down" => "Next".to_string(),
+        "arrowleft" | "left" => "Left".to_string(),
+        "arrowright" | "right" => "Right".to_string(),
+        "arrowup" | "up" => "Up".to_string(),
+        "arrowdown" | "down" => "Down".to_string(),
+        "f1" => "F1".to_string(),
+        "f2" => "F2".to_string(),
+        "f3" => "F3".to_string(),
+        "f4" => "F4".to_string(),
+        "f5" => "F5".to_string(),
+        "f6" => "F6".to_string(),
+        "f7" => "F7".to_string(),
+        "f8" => "F8".to_string(),
+        "f9" => "F9".to_string(),
+        "f10" => "F10".to_string(),
+        "f11" => "F11".to_string(),
+        "f12" => "F12".to_string(),
+        value if value.len() == 1 => value.to_string(),
+        _ => return None,
+    })
 }
 
 fn modifier_keycode(key: &str) -> Option<u16> {
@@ -2295,6 +2499,61 @@ fn keycode_for_ascii(value: char) -> Option<u16> {
         '0' => Some(11),
         _ => None,
     }
+}
+
+fn xdotool_type_commands(text: &str) -> std::result::Result<Vec<Vec<String>>, String> {
+    let normalized = text.replace("\r\n", "\n");
+    let mut commands = Vec::new();
+    let mut chunk = String::new();
+
+    let flush_chunk = |commands: &mut Vec<Vec<String>>, chunk: &mut String| {
+        if chunk.is_empty() {
+            return;
+        }
+        commands.push(vec![
+            "type".to_string(),
+            "--delay".to_string(),
+            "1".to_string(),
+            "--clearmodifiers".to_string(),
+            "--".to_string(),
+            chunk.clone(),
+        ]);
+        chunk.clear();
+    };
+
+    for ch in normalized.chars() {
+        match ch {
+            '\n' | '\r' => {
+                flush_chunk(&mut commands, &mut chunk);
+                commands.push(vec![
+                    "key".to_string(),
+                    "--clearmodifiers".to_string(),
+                    "Return".to_string(),
+                ]);
+            }
+            '\t' => {
+                return Err(
+                    "type_text does not translate '\\t' to Tab for X11; use press_key(\"Tab\") for Tab key events".to_string(),
+                );
+            }
+            _ if ch.is_control() => {
+                return Err(format!(
+                    "unsupported control character in type_text: U+{:04X}",
+                    ch as u32
+                ));
+            }
+            _ => chunk.push(ch),
+        }
+    }
+    flush_chunk(&mut commands, &mut chunk);
+    Ok(commands)
+}
+
+fn xdotool_available() -> bool {
+    Command::new("sh")
+        .args(["-c", "command -v xdotool"])
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 fn user_id() -> Option<String> {
@@ -3145,5 +3404,44 @@ mod tests {
             .unwrap();
 
         assert!(matches!(target, ClickTarget::Coordinates(60, 40)));
+    }
+
+    #[test]
+    fn xdotool_key_chord_normalizes_common_shortcuts() {
+        assert_eq!(xdotool_key_chord("Ctrl+L").as_deref(), Some("ctrl+l"));
+        assert_eq!(xdotool_key_chord("ArrowLeft").as_deref(), Some("Left"));
+        assert_eq!(xdotool_key_chord("Super").as_deref(), Some("super"));
+    }
+
+    #[test]
+    fn xdotool_type_commands_split_newlines() {
+        let commands = xdotool_type_commands("hello\nworld").unwrap();
+
+        assert_eq!(
+            commands,
+            vec![
+                vec![
+                    "type".to_string(),
+                    "--delay".to_string(),
+                    "1".to_string(),
+                    "--clearmodifiers".to_string(),
+                    "--".to_string(),
+                    "hello".to_string(),
+                ],
+                vec![
+                    "key".to_string(),
+                    "--clearmodifiers".to_string(),
+                    "Return".to_string(),
+                ],
+                vec![
+                    "type".to_string(),
+                    "--delay".to_string(),
+                    "1".to_string(),
+                    "--clearmodifiers".to_string(),
+                    "--".to_string(),
+                    "world".to_string(),
+                ],
+            ]
+        );
     }
 }

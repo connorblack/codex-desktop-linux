@@ -1,0 +1,19 @@
+services:
+  codex_headless:
+    build:
+      context: .
+      dockerfile: contrib/headless-computer-use/Dockerfile
+    shm_size: 2gb
+    environment:
+      NO_VNC_PORT: "6080"
+      VNC_PORT: "5901"
+      VNC_RESOLUTION: "1440x900"
+    ports:
+      - "6080:6080"
+      - "5901:5901"
+    volumes:
+      - codex_headless_data:/data
+    restart: unless-stopped
+
+volumes:
+  codex_headless_data:
