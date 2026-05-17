@@ -31,7 +31,8 @@ function rewriteWebSocketUrl(rawUrl) {
   const source = new URL(rawUrl);
   const base = new URL(endpoint);
   source.protocol = base.protocol === "https:" ? "wss:" : "ws:";
-  source.host = base.host;
+  source.hostname = base.hostname;
+  source.port = base.port;
   if (!source.searchParams.has("token")) {
     source.searchParams.set("token", token);
   }
@@ -42,12 +43,14 @@ function rewriteDevtoolsUrl(rawUrl) {
   const source = new URL(rawUrl, `${publicEndpoint}/`);
   const base = new URL(publicEndpoint);
   source.protocol = base.protocol;
-  source.host = base.host;
+  source.hostname = base.hostname;
+  source.port = base.port;
   const ws = source.searchParams.get("ws");
   if (ws) {
     const wsProtocol = base.protocol === "https:" ? "wss" : "ws";
     const wsSource = new URL(`${wsProtocol}://${ws}`);
-    wsSource.host = base.host;
+    wsSource.hostname = base.hostname;
+    wsSource.port = base.port;
     if (!wsSource.searchParams.has("token")) {
       wsSource.searchParams.set("token", token);
     }
