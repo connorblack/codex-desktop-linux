@@ -13,7 +13,7 @@ It borrows the same core shape Daytona uses for browser-visible computer-use san
 - `xdg-utils` plus a `codex-browserless-open` desktop handler for Browserless-backed login/device-activation handoff
 - `git` and `xz-utils` for Codex runtime/skills installation paths after startup
 
-The entrypoint configures `codex-browserless-open` as the default `xdg-open` browser before Codex starts. Set `BROWSERLESS_ENDPOINT` and `BROWSERLESS_TOKEN` to point it at an external Browserless service; login URLs will be opened through Browserless instead of trying to run Chromium inside this container.
+The entrypoint configures `codex-browserless-open` as the default `xdg-open` browser before Codex starts. Set `BROWSERLESS_ENDPOINT` and `BROWSERLESS_TOKEN` to point it at an external Browserless service; login URLs will be opened through Browserless instead of trying to run Chromium inside this container. In Coolify, attach this service to the Browserless application's Docker network and use the internal endpoint (`http://browserless:3000`) for runtime calls while keeping `BROWSERLESS_PUBLIC_ENDPOINT` on the public Coolify URL for the watch/debug link.
 
 The image builds `codex-app/` from this repo, enables the Computer Use UI patch, installs the Codex CLI under `/opt/codex-cli`, and launches Codex Desktop at container start.
 
@@ -32,6 +32,7 @@ Relevant environment variables:
 - `BROWSERLESS_TOKEN` Browserless API token
 - `BROWSERLESS_PUBLIC_ENDPOINT` optional public Browserless base URL used when writing the watch/debug URL
 - `BROWSERLESS_SESSION_TTL_SECONDS` default `1800`
+- `BROWSERLESS_NETWORK` external Docker network name for the Browserless Coolify app, used by the compose files
 - `DISPLAY` default `:0`
 
 For Coolify, deploy the root-level `deploy.headless-compose.yaml` as a Docker Compose application and route the public domain to port `6080`.

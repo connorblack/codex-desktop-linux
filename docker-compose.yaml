@@ -15,9 +15,17 @@ services:
     ports:
       - "6080:6080"
       - "5901:5901"
+    networks:
+      - default
+      - browserless
     volumes:
       - codex_headless_data:/data
     restart: unless-stopped
 
 volumes:
   codex_headless_data:
+
+networks:
+  browserless:
+    external: true
+    name: "${BROWSERLESS_NETWORK:-mmehoyam5h8abhc2h9czbk0j}"
