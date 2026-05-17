@@ -9,7 +9,9 @@ It borrows the same core shape Daytona uses for browser-visible computer-use san
 - `xfce4` for a lightweight desktop session
 - `at-spi-bus-launcher` for accessibility trees
 - `x11vnc` plus `noVNC`/`websockify` for browser streaming
+- `scrot` for X11 screenshot capture when GNOME Shell and XDG portals are unavailable
 - `xdotool` for X11-native input fallback inside the virtual display
+- `git` and `xz-utils` for Codex runtime/skills installation paths after startup
 
 The image builds `codex-app/` from this repo, enables the Computer Use UI patch, installs the Codex CLI under `/opt/codex-cli`, and launches Codex Desktop at container start.
 

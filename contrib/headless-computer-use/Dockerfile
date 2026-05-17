@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     dbus-x11 \
+    git \
     libasound2t64 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -74,12 +75,14 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     novnc \
     python3 \
+    scrot \
     websockify \
     xfce4 \
     xfce4-terminal \
     x11vnc \
     xauth \
     xdotool \
+    xz-utils \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 

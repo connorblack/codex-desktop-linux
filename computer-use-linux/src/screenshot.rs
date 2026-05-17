@@ -8,6 +8,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    process::Command,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use zbus::{
@@ -41,9 +42,12 @@ pub async fn capture_screenshot() -> Result<ScreenshotCapture> {
         Ok(capture) => Ok(capture),
         Err(gnome_error) => match capture_with_portal().await {
             Ok(capture) => Ok(capture),
-            Err(portal_error) => Err(anyhow!(
-                "GNOME Shell screenshot failed: {gnome_error}; XDG portal screenshot failed: {portal_error}"
-            )),
+            Err(portal_error) => match capture_with_x11_scrot().await {
+                Ok(capture) => Ok(capture),
+                Err(x11_error) => Err(anyhow!(
+                    "GNOME Shell screenshot failed: {gnome_error}; XDG portal screenshot failed: {portal_error}; X11 scrot screenshot failed: {x11_error}"
+                )),
+            },
         },
     }
 }
@@ -133,6 +137,37 @@ async fn capture_with_portal() -> Result<ScreenshotCapture> {
     let path = file_uri_to_path(&uri)?;
 
     read_png_as_capture(path, "xdg-desktop-portal", ScreenshotCleanup::Preserve).await
+}
+
+async fn capture_with_x11_scrot() -> Result<ScreenshotCapture> {
+    let display = std::env::var("DISPLAY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .context("DISPLAY is unset")?;
+    let path = temp_png_path("x11-scrot");
+    let output = Command::new("scrot")
+        .env("DISPLAY", display)
+        .arg(&path)
+        .output()
+        .context("failed to run scrot")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        let _ = fs::remove_file(&path);
+        if detail.is_empty() {
+            bail!("scrot exited with {}", output.status);
+        }
+        bail!("{detail}");
+    }
+
+    read_png_as_capture(
+        path.clone(),
+        "x11-scrot",
+        ScreenshotCleanup::DeletePath(path),
+    )
+    .await
 }
 
 async fn portal_response_stream(connection: &zbus::Connection) -> Result<MessageStream> {
