@@ -77,11 +77,12 @@ RUN apt-get update && apt-get install -y \
     python3 \
     scrot \
     websockify \
-    xfce4 \
-    xfce4-terminal \
     x11vnc \
     xauth \
+    xdg-utils \
     xdotool \
+    xfce4 \
+    xfce4-terminal \
     xz-utils \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
@@ -90,9 +91,12 @@ RUN mkdir -p /data/.codex /data/.config/codex-desktop /opt/codex-desktop
 
 COPY --from=builder /src/codex-app /opt/codex-desktop
 COPY --from=builder /opt/codex-cli /opt/codex-cli
+COPY contrib/headless-computer-use/browserless-open.mjs /usr/local/lib/codex-headless/browserless-open.mjs
+COPY contrib/headless-computer-use/browserless-open.sh /usr/local/bin/codex-browserless-open
+COPY contrib/headless-computer-use/codex-browserless-open.desktop /usr/local/share/applications/codex-browserless-open.desktop
 COPY contrib/headless-computer-use/entrypoint.sh /usr/local/bin/codex-headless-entrypoint
 
-RUN chmod +x /usr/local/bin/codex-headless-entrypoint
+RUN chmod +x /usr/local/bin/codex-browserless-open /usr/local/bin/codex-headless-entrypoint
 
 VOLUME ["/data"]
 EXPOSE 6080 5901 5175

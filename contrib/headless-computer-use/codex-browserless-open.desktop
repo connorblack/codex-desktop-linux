@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Codex Browserless
+Comment=Open URLs in the external Browserless service
+Exec=codex-browserless-open %U
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;

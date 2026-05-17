@@ -12,11 +12,36 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-root}"
 export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
 export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-XFCE}"
 export DESKTOP_SESSION="${DESKTOP_SESSION:-xfce}"
+export BROWSER="${BROWSER:-codex-browserless-open}"
 
-mkdir -p "$CODEX_HOME" "$XDG_RUNTIME_DIR" "$HOME/.config/codex-desktop" /tmp/codex-headless
+mkdir -p "$CODEX_HOME" "$XDG_RUNTIME_DIR" "$HOME/.config/codex-desktop" "$HOME/.config/xfce4" /tmp/codex-headless
 chmod 700 "$XDG_RUNTIME_DIR"
 
 printf '%s\n' '{"codex-linux-computer-use-ui-enabled": true}' >"$HOME/.config/codex-desktop/settings.json"
+
+configure_default_browser() {
+    local browser_desktop="codex-browserless-open.desktop"
+    local browser_helper="codex-browserless-open"
+
+    if ! command -v "$browser_helper" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    mkdir -p "$HOME/.config" "$HOME/.local/share/applications" "$HOME/.config/xfce4"
+    printf 'WebBrowser=%s\n' "$browser_helper" >"$HOME/.config/xfce4/helpers.rc"
+
+    if command -v xdg-mime >/dev/null 2>&1; then
+        xdg-mime default "$browser_desktop" text/html >/dev/null 2>&1 || true
+        xdg-mime default "$browser_desktop" x-scheme-handler/http >/dev/null 2>&1 || true
+        xdg-mime default "$browser_desktop" x-scheme-handler/https >/dev/null 2>&1 || true
+    fi
+
+    if command -v xdg-settings >/dev/null 2>&1; then
+        xdg-settings set default-web-browser "$browser_desktop" >/dev/null 2>&1 || true
+    fi
+}
+
+configure_default_browser
 
 eval "$(dbus-launch --sh-syntax)"
 export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
