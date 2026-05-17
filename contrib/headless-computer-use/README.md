@@ -36,3 +36,4 @@ Relevant environment variables:
 - `DISPLAY` default `:0`
 
 For Coolify, deploy the root-level `deploy.headless-compose.yaml` as a Docker Compose application and route the public domain to port `6080`.
+The compose files set `SERVICE_URL_CODEX_HEADLESS_6080=/vnc.html?autoconnect=1&resize=scale` so Coolify's generated service link opens the browser-ready noVNC session directly.
