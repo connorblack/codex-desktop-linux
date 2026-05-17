@@ -47,5 +47,8 @@ else
     websockify --web=/usr/share/novnc/ "$NO_VNC_PORT" "localhost:${VNC_PORT}" >/tmp/codex-headless/novnc.log 2>&1 &
 fi
 
+cd /opt/codex-desktop/content/webview
+python3 /opt/codex-desktop/.codex-linux/webview-server.py 5175 --bind 127.0.0.1 >/tmp/codex-headless/webview.log 2>&1 &
+
 cd /opt/codex-desktop
 exec /opt/codex-desktop/start.sh
